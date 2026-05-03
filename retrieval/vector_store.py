@@ -1,56 +1,41 @@
 import os
-import faiss
-import pickle
-import numpy as np
-
+from langchain_community.vectorstores import FAISS
 
 class VectorStore:
 
     def __init__(self, index_path="vector_store"):
         self.index_path = index_path
-        self.index = None
-        self.documents = []
+        self.vector_store = None
 
-        if not os.path.exists(index_path):
-            os.makedirs(index_path)
-
-    def create_index(self, dimension):
-        self.index = faiss.IndexFlatL2(dimension)
-
-    def add(self, embeddings, documents):
-
-        index_file = os.path.join(self.index_path, "faiss.index")
-        doc_file = os.path.join(self.index_path, "documents.pkl")
-
-        if os.path.exists(index_file):
-             self.load()
+    def add(self, embeddings_model, documents):
+        if not os.path.exists(self.index_path) or not os.path.exists(os.path.join(self.index_path, "index.faiss")):
+            # Create new vector store
+            self.vector_store = FAISS.from_documents(documents, embeddings_model)
         else:
-            # Create new index
-            self.create_index(len(embeddings[0]))
-            # self.documents = []
-
-        # Add new data
-        self.index.add(np.array(embeddings))
-        self.documents.extend(documents)
+            # Load existing and format new documents
+            self.load(embeddings_model)
+            self.vector_store.add_documents(documents)
 
     def save(self):
-        faiss.write_index(self.index, os.path.join(self.index_path, "faiss.index"))
+        if self.vector_store is not None:
+            self.vector_store.save_local(self.index_path)
 
-        with open(os.path.join(self.index_path, "documents.pkl"), "wb") as f:
-            pickle.dump(self.documents, f)
-    def load(self):
-        self.index = faiss.read_index(os.path.join(self.index_path, "faiss.index"))
+    def load(self, embeddings_model):
+        self.vector_store = FAISS.load_local(self.index_path, embeddings_model, allow_dangerous_deserialization=True)
 
-        with open(os.path.join(self.index_path, "documents.pkl"), "rb") as f:
-            self.documents = pickle.load(f)
-
-    def search(self, query_embedding, k=3):
-        distances, indices = self.index.search(
-            np.array([query_embedding]), k
-        )
-
-        results = []
-        for idx in indices[0]:
-            results.append(self.documents[idx])
-
-        return results
+    def search(self, query, k=3, session_id=None):
+        if self.vector_store is None:
+            return []
+        # Return LangChain Document objects
+        if session_id:
+            try:
+                return self.vector_store.max_marginal_relevance_search(
+                    query,
+                    k=k,
+                    fetch_k=max(10, k * 4),
+                    filter={"session_id": session_id}
+                )
+            except TypeError:
+                docs = self.vector_store.max_marginal_relevance_search(query, k=max(k * 4, 10), fetch_k=max(k * 8, 20))
+                return [doc for doc in docs if doc.metadata.get("session_id") == session_id][:k]
+        return self.vector_store.max_marginal_relevance_search(query, k=k, fetch_k=10)

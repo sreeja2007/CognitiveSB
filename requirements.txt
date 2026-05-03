@@ -3,7 +3,13 @@ python-dotenv
 langchain
 langchain-community
 langchain-core
-sentence-transformers
+langchain-huggingface
+langchain-groq
+langgraph
 faiss-cpu
 youtube-transcript-api
 huggingface-hub
+flask-cors
+PyMuPDF
+python-docx
+sentence-transformers
