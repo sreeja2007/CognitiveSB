@@ -1,202 +1,190 @@
-# CognitiveSB / ShadowByte
+# ShadowByte
 
-ShadowByte is an AI study companion that turns uploaded study material or YouTube transcripts into a chat tutor, notes, quizzes, flashcards, and a knowledge graph.
+> Most study tools let you read passively. ShadowByte forces active recall — upload your material and get a Socratic tutor, structured notes, auto-generated quizzes, spaced repetition flashcards, and an interactive knowledge graph, all powered by a RAG pipeline that actually understands your content.
 
-The project has two main parts:
+![ShadowByte Demo](assets/demo.gif)
 
-- A Flask backend that ingests documents, chunks and embeds them, stores them in FAISS, and calls Groq-hosted LLMs through LangChain.
-- A Vite + React frontend that provides the dashboard, study chat, notes, quiz, flashcards, and graph views.
+---
 
-## Features
+## Screenshots
 
-- Upload study files: PDF, TXT, DOCX, and PPTX.
-- Import YouTube transcripts from normal YouTube or `youtu.be` URLs.
-- Create study sessions from uploaded content.
-- Chat with the material through a RAG workflow.
-- Switch chat modes: Socratic, Feynman, simple explanation, and exam prep.
-- Generate structured notes, flashcards, quizzes, short-answer grading, and knowledge graphs.
-- Store embeddings in a local FAISS vector index.
+| Dashboard | Study Chat |
+|---|---|
+| ![Dashboard](assets/dashboard.png) | ![Chat](assets/chat.png) |
+
+| MCQ Quiz | Short Answer |
+|---|---|
+| ![Quiz](assets/quiz.png) | ![Short Answer](assets/short_answer.png) |
+
+| Flashcards | Mind Map |
+|---|---|
+| ![Flashcards](assets/flashcards.png) | ![Mind Map](assets/mindmap.png) |
+
+---
+
+## What it does
+
+Upload a PDF, DOCX, TXT, or YouTube URL. ShadowByte ingests it through a RAG pipeline and gives you:
+
+- **4 chat modes** — Socratic (guides with questions), Feynman (you explain it to the AI), Simple (explain like I'm 12), Exam Prep (high-yield definitions and likely questions)
+- **Structured notes** — key topics extracted with difficulty ratings, click any topic to go deeper
+- **MCQ quiz** — auto-generated multiple choice with hints and difficulty tags
+- **Short answer practice** — LLM-graded answers with specific feedback
+- **Flashcards** — spaced repetition with SM-2 algorithm, tracks mastery across cards
+- **Interactive mind map** — click any node to ask the AI about that specific concept
+
+---
 
 ## Tech Stack
 
-Backend:
-
-- Python
-- Flask
-- Flask-CORS
-- LangChain
-- LangGraph
-- Groq chat models
-- HuggingFace sentence-transformer embeddings
-- FAISS
+**Backend**
+- Python, Flask, Flask-CORS
+- LangChain, LangGraph
+- Groq (LLM inference)
+- HuggingFace sentence-transformers (embeddings)
+- FAISS (vector store)
 - YouTube Transcript API
 
-Frontend:
+**Frontend**
+- React 19, TypeScript, Vite
+- Tailwind CSS, Framer Motion
+- React Force Graph 2D (mind map)
+- React Router, Lucide Icons, Sonner
 
-- React
-- TypeScript
-- Vite
-- React Router
-- Tailwind CSS
-- lucide-react
-- react-force-graph-2d
-- react-markdown
-- sonner
+---
 
-## Project Structure
+## Architecture
 
-```text
-.
-|-- app.py                  # Flask app entry point and legacy server-rendered routes
-|-- agents/                 # Prompts and streaming RAG workflow
-|-- frontend/               # Vite React application
-|-- llm/                    # Groq LLM wrapper
-|-- loaders/                # File and YouTube transcript loaders
-|-- processing/             # Chunking, embeddings, LangGraph RAG, graph extraction
-|-- retrieval/              # FAISS vector store wrapper
-|-- routes/                 # Flask API blueprints
-|-- templates/              # Legacy Flask templates
-|-- uploads/                # Runtime upload directory
-|-- utils/                  # JSON parsing helpers
-|-- vector_store/           # Runtime FAISS index files
-|-- requirements.txt        # Python dependencies
+```
+Upload (PDF / DOCX / TXT / YouTube URL)
+        ↓
+  Loader Manager
+        ↓
+  Chunker → Embedder → FAISS Vector Store
+        ↓
+  Session Store (in-memory)
+        ↓
+  ┌─────────────────────────────────────┐
+  │         LangGraph RAG Pipeline      │
+  │  Retrieve → Rerank → Stream (Groq)  │
+  └─────────────────────────────────────┘
+        ↓
+  Mode Prompts: Socratic / Feynman / Simple / Exam
+        ↓
+  SSE Streaming → React Frontend
 ```
 
-## Backend Flow
+```
+.
+├── app.py                  # Flask entry point
+├── agents/
+│   ├── prompts.py          # All mode prompt templates
+│   └── rag_workflow.py     # LangGraph RAG pipeline
+├── loaders/                # PDF, DOCX, TXT, YouTube loaders
+├── processing/             # Chunker, embedder, graph extractor
+├── retrieval/              # FAISS vector store wrapper
+├── routes/                 # Flask API blueprints
+├── llm/                    # Groq LLM wrapper
+├── utils/                  # JSON helpers
+├── frontend/               # Vite + React app
+│   └── src/
+│       ├── pages/          # Dashboard, StudyChat
+│       ├── components/ui/  # Chat, flashcards, quiz, notes, graph
+│       ├── hooks/          # useChat (SSE streaming)
+│       ├── lib/            # API client, utils
+│       └── styles/         # Design tokens (flat dark)
+├── uploads/                # Runtime — gitignored
+└── vector_store/           # Runtime FAISS index — gitignored
+```
 
-1. `routes/upload.py` accepts a file upload or YouTube URL.
-2. `loaders/loader_manager.py` chooses either `FileLoader` or `YoutubeLoader`.
-3. `processing/chunker.py` splits loaded documents into overlapping chunks.
-4. `processing/embedder.py` creates a HuggingFace embedding model.
-5. `retrieval/vector_store.py` writes chunks into the local FAISS index.
-6. Session metadata and full extracted text are stored in `routes/store.py`.
-7. Chat uses `agents/rag_workflow.py` to retrieve relevant chunks and stream an answer from Groq.
-8. Notes, flashcards, quizzes, grading, and graph generation reuse `llm/generator.py` with specialized prompts from `agents/prompts.py`.
+---
 
-## API Overview
+## API
 
-All modern API routes are mounted under `/api`.
+All routes under `/api`:
 
 | Method | Route | Purpose |
-| --- | --- | --- |
-| `GET` | `/api/health` | Backend health check |
-| `POST` | `/api/upload` | Upload a file or submit a YouTube URL |
-| `GET` | `/api/chat` | Stream chat response as server-sent events |
-| `GET` | `/api/sessions` | List in-memory sessions |
-| `DELETE` | `/api/sessions/<session_id>` | Delete a session |
-| `GET` | `/api/notes/<session_id>` | Fetch generated notes |
-| `POST` | `/api/notes/generate/<session_id>` | Generate notes |
-| `GET` | `/api/flashcards/<session_id>` | Fetch flashcards |
-| `POST` | `/api/flashcards/generate/<session_id>` | Generate flashcards |
+|---|---|---|
+| `GET` | `/api/health` | Health check |
+| `POST` | `/api/upload` | Upload file or YouTube URL |
+| `GET` | `/api/chat` | Stream chat via SSE |
+| `GET` | `/api/sessions` | List sessions |
+| `DELETE` | `/api/sessions/<id>` | Delete session |
+| `GET` | `/api/notes/<id>` | Get notes |
+| `POST` | `/api/notes/generate/<id>` | Generate notes |
+| `GET` | `/api/flashcards/<id>` | Get flashcards |
+| `POST` | `/api/flashcards/generate/<id>` | Generate flashcards |
 | `POST` | `/api/flashcards/rate` | Rate flashcard mastery |
-| `GET` | `/api/quiz/<session_id>` | Fetch quiz data |
-| `POST` | `/api/quiz/generate/<session_id>` | Generate quiz questions |
-| `POST` | `/api/quiz/grade` | Grade a short answer |
-| `GET` | `/api/graph/<session_id>` | Fetch a knowledge graph |
-| `POST` | `/api/graph/generate/<session_id>` | Generate a knowledge graph |
-| `GET` | `/api/fact/<session_id>` | Generate a short study fact |
+| `GET` | `/api/quiz/<id>` | Get quiz |
+| `POST` | `/api/quiz/generate/<id>` | Generate quiz |
+| `POST` | `/api/quiz/grade` | LLM-grade short answer |
+| `GET` | `/api/graph/<id>` | Get knowledge graph |
+| `POST` | `/api/graph/generate/<id>` | Generate knowledge graph |
+| `GET` | `/api/fact/<id>` | Get a study fact |
 
-`app.py` also contains older form-based routes such as `/`, `/query`, `/youtube`, and a POST-based `/api/chat`. The React frontend uses the blueprint routes above through `frontend/src/lib/api.ts`.
+---
 
 ## Setup
 
-### 1. Backend Environment
-
-Create and activate a Python virtual environment:
+**1. Clone and set up backend**
 
 ```bash
+git clone https://github.com/Sudhanshukumar0007/CognitiveSB.git
+cd CognitiveSB
+
 python -m venv .venv
-.venv\Scripts\activate
-```
+.venv\Scripts\activate        # Windows
+source .venv/bin/activate     # Mac/Linux
 
-Install Python dependencies:
-
-```bash
 pip install -r requirements.txt
 ```
 
-Create a `.env` file from the sample:
+**2. Configure environment**
 
 ```bash
-copy .env.sample .env
+copy .env.sample .env         # Windows
+cp .env.sample .env           # Mac/Linux
 ```
 
-Set at least:
+Edit `.env` and set:
 
 ```env
 GROQ_API_KEY="your_groq_api_key"
 ```
 
-LangSmith variables are optional unless you want tracing.
+Get a free Groq API key at [console.groq.com](https://console.groq.com)
 
-### 2. Frontend Environment
-
-Install frontend dependencies:
+**3. Set up frontend**
 
 ```bash
 cd frontend
 npm install
 ```
 
-## Running the App
-
-Start the Flask backend from the repository root:
+**4. Run**
 
 ```bash
+# Terminal 1 — backend
 python app.py
-```
 
-The backend runs on:
-
-```text
-http://localhost:5000
-```
-
-Start the frontend in another terminal:
-
-```bash
+# Terminal 2 — frontend
 cd frontend
 npm run dev
 ```
 
-The frontend usually runs on:
+Open [http://localhost:5173](http://localhost:5173)
 
-```text
-http://localhost:5173
-```
+---
 
-The Flask CORS config allows Vite dev origins on ports `5173` and `5174`.
+## Known Limitations
 
-## Testing and Smoke Checks
+- Sessions are in-memory — lost on Flask restart
+- FAISS retrieval is not strictly isolated per session
+- `vector_store/` and `uploads/` are gitignored and created at runtime
 
-Manual backend checks:
+---
 
-```bash
-python test_generate.py
-python test_retrieval.py
-```
+## Built by
 
-Frontend checks:
-
-```bash
-cd frontend
-npm run lint
-npm run build
-```
-
-`test_generate.py` calls the Groq API, so it requires a valid `GROQ_API_KEY`. `test_retrieval.py` expects a populated `vector_store/` directory.
-
-## Runtime Data
-
-- `uploads/` stores uploaded files.
-- `vector_store/` stores the FAISS index.
-- `knowledge_graph.json` stores merged graph extraction output.
-- `routes/store.py` currently uses an in-memory dictionary for sessions, so sessions are lost when the Flask process restarts.
-
-## Notes for Development
-
-- The active frontend API base URL is hard-coded in `frontend/src/lib/api.ts` as `http://localhost:5000/api`.
-- Uploaded chunks receive a `session_id` in metadata, but the current FAISS search path does not strictly isolate retrieval by session.
-- `VectorStore.load()` uses `allow_dangerous_deserialization=True`, which is acceptable only when loading a trusted local FAISS index.
-- Groq model usage is centralized in `llm/generator.py` and `agents/rag_workflow.py`.
-- Knowledge graph extraction samples up to three chunks to keep generation small and fast.
+[Sudhanshu Kumar](https://github.com/Sudhanshukumar0007) — 2nd year CS student building AI systems.
+Part of the larger **Aira** project — a modular AI OS connecting multiple specialized agents.
