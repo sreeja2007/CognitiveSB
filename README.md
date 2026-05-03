@@ -77,6 +77,7 @@ Upload (PDF / DOCX / TXT / YouTube URL)
 ```
 .
 ├── app.py                  # Flask entry point
+├── db.py                   # SQLite persistence layer (sessions, history, SM-2, progress)
 ├── agents/
 │   ├── prompts.py          # All mode prompt templates
 │   └── rag_workflow.py     # LangGraph RAG pipeline
@@ -172,15 +173,21 @@ cd frontend
 npm run dev
 ```
 
-Open [http://localhost:5173](http://localhost:5173)
+Open your browser and go to `http://localhost:5173`
 
 ---
 
-## Known Limitations
+## Persistence & Data Layer
 
-- Sessions are in-memory — lost on Flask restart
-- FAISS retrieval is not strictly isolated per session
-- `vector_store/` and `uploads/` are gitignored and created at runtime
+All session data is persisted to a local SQLite database (`shadowbyte.db`) via `db.py`:
+
+- **Sessions** — stored with full extracted text and metadata, survive Flask restarts
+- **Message history** — every chat message saved per session, last 6 loaded as context on each request
+- **Spaced repetition** — SM-2 algorithm fully implemented in `card_schedule` table, tracking easiness factor, interval, repetitions, and next review date per card
+- **Progress tracking** — quiz scores and flashcard mastery percentages tracked per session in a `progress` table
+- **Cascade deletes** — deleting a session cleans up all related messages, progress, and card schedules
+
+`vector_store/` and `uploads/` are created at runtime and gitignored.
 
 ---
 
